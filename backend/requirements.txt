@@ -5,6 +5,7 @@ python-dotenv
 bcrypt
 python-jose[cryptography]
 sqlalchemy[asyncio]
+greenlet
 aiosqlite
 asyncpg
 python-multipart
