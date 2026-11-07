@@ -4,7 +4,7 @@ neo4j
 python-dotenv
 bcrypt
 python-jose[cryptography]
-sqlalchemy
+sqlalchemy[asyncio]
 aiosqlite
 asyncpg
 python-multipart
