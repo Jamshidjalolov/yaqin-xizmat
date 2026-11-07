@@ -167,7 +167,7 @@ function pageKeyboard(items, page, itemCallback, pageCallback, labelForItem, val
 async function replyOrEdit(ctx, text, replyMarkup) {
   if (ctx.callbackQuery?.message) {
     if (hasTelegramPhoto(ctx.callbackQuery.message)) {
-      await ctx.editMessageCaption(text, { parse_mode: "HTML", reply_markup: replyMarkup });
+      await ctx.editMessageCaption({ caption: text, parse_mode: "HTML", reply_markup: replyMarkup });
     } else {
       await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: replyMarkup });
     }
