@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: yaqin-xizmat-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+  - type: web
+    name: yaqin-xizmat-bot
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: telegram-bot
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: API_BASE_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEB_APP_URL
+        value: https://yaqin-xizmat.netlify.app
+      - key: WEBHOOK_SECRET
+        generateValue: true

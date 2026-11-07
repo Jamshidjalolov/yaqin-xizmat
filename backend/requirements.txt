@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+neo4j
+python-dotenv
+bcrypt
+python-jose[cryptography]
+sqlalchemy
+aiosqlite
+asyncpg
+python-multipart

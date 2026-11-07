@@ -1,0 +1,14 @@
+.env
+**/.env
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+*.log
+.netlify/
+frontend/node_modules/
+frontend/dist/
+telegram-bot/node_modules/
