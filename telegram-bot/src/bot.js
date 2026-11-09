@@ -14,6 +14,10 @@ if (!botToken) {
   throw new Error("BOT_TOKEN environment variable is missing. Set it in Render Dashboard > yaqin-xizmat-bot > Environment.");
 }
 
+if (port && ["localhost", "127.0.0.1", "::1"].includes(new URL(apiBaseUrl).hostname)) {
+  throw new Error("Render'da API_BASE_URL ni https://yaqin-xizmat-api.onrender.com qilib sozlang.");
+}
+
 if (!webAppUrl) {
   throw new Error("WEB_APP_URL .env faylida ko'rsatilishi kerak");
 }

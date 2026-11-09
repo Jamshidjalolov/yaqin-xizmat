@@ -28,7 +28,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: API_BASE_URL
-        sync: false
+        value: https://yaqin-xizmat-api.onrender.com
       - key: BOT_TOKEN
         sync: false
       - key: WEB_APP_URL
