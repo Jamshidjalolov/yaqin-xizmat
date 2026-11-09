@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 
@@ -11,7 +11,7 @@ const pageSize = 6;
 const port = Number(process.env.PORT);
 
 if (!botToken) {
-  throw new Error("BOT_TOKEN .env faylida ko'rsatilishi kerak");
+  throw new Error("BOT_TOKEN environment variable is missing. Set it in Render Dashboard > yaqin-xizmat-bot > Environment.");
 }
 
 if (!webAppUrl) {
@@ -138,7 +138,14 @@ async function apiRequest(path, options = {}) {
 }
 
 function appKeyboard() {
-  return miniAppEnabled ? new InlineKeyboard().webApp("📱 Saytni ochish", webAppUrl) : undefined;
+  return miniAppEnabled ? new InlineKeyboard().webApp("📱 Ilovada ochish", webAppUrl) : undefined;
+}
+
+function serviceAppUrl(serviceId) {
+  if (!miniAppEnabled) return webAppUrl;
+  const url = new URL(webAppUrl);
+  url.searchParams.set("service_id", String(serviceId));
+  return url.toString();
 }
 
 function mainKeyboard() {
@@ -147,7 +154,7 @@ function mainKeyboard() {
     .text("📂 Kategoriyalar", "categories:0")
     .row()
     .text("🔎 Qidirish", "search");
-  if (miniAppEnabled) keyboard.row().webApp("📱 Saytni ochish", webAppUrl);
+  if (miniAppEnabled) keyboard.row().webApp("📱 Ilovada ochish", webAppUrl);
   return keyboard;
 }
 
@@ -160,7 +167,7 @@ function pageKeyboard(items, page, itemCallback, pageCallback, labelForItem, val
   if (page > 0) keyboard.text("⬅️ Oldingi", pageData(page - 1));
   if ((page + 1) * pageSize < totalCount) keyboard.text("Keyingi ➡️", pageData(page + 1));
   keyboard.row().text("🏠 Bosh menyu", "menu");
-  if (miniAppEnabled) keyboard.webApp("📱 Saytni ochish", webAppUrl);
+  if (miniAppEnabled) keyboard.webApp("📱 Ilovada ochish", webAppUrl);
   return keyboard;
 }
 
@@ -263,7 +270,7 @@ async function showService(ctx, id) {
     .text("⬅️ Xizmatlar", "services:0")
     .text("🏠 Bosh menyu", "menu")
     .row();
-  if (miniAppEnabled) keyboard.webApp("📱 Saytda ochish", webAppUrl);
+  if (miniAppEnabled) keyboard.webApp("📱 Ilovada ochish", serviceAppUrl(service.id));
   await replyWithPhoto(ctx, await servicePhoto(service.image_url), text, keyboard);
 }
 
@@ -442,7 +449,9 @@ bot.callbackQuery(/^call:(\d+)$/, async (ctx) => {
   await apiRequest(`/services/${service.id}/call`, { method: "POST" });
   await ctx.reply(
     `✅ <b>${escapeHtml(service.provider_name)}</b>\n\n📞 Telefon raqami:\n<code>${escapeHtml(service.phone)}</code>\n\n🤝 Qo'ng'iroq qilib, xizmat tafsilotlarini kelishib oling.`,
-    { parse_mode: "HTML", reply_markup: appKeyboard() },
+    { parse_mode: "HTML", reply_markup: miniAppEnabled
+      ? new InlineKeyboard().webApp("📱 Ilovada ochish", serviceAppUrl(service.id))
+      : undefined },
   );
 });
 
@@ -459,7 +468,7 @@ bot.callbackQuery(/^map:(\d+)$/, async (ctx) => {
     `🗺 <b>Manzil</b>\n\n📍 ${escapeHtml(service.location)}\n\nXaritada yo'lni oching 👇`,
     {
       reply_markup: miniAppEnabled
-        ? new InlineKeyboard().url("🗺 Xaritada ochish", mapUrl).row().webApp("📱 Saytni ochish", webAppUrl)
+        ? new InlineKeyboard().url("🗺 Xaritada ochish", mapUrl).row().webApp("📱 Ilovada ochish", serviceAppUrl(service.id))
         : new InlineKeyboard().url("🗺 Xaritada ochish", mapUrl),
     },
   );
@@ -512,10 +521,13 @@ await bot.api.setMyCommands([
 
 if (port) {
   const publicUrl = process.env.RENDER_EXTERNAL_URL;
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-  if (!publicUrl || !webhookSecret) {
+  const configuredWebhookSecret = process.env.WEBHOOK_SECRET;
+  if (!publicUrl || !configuredWebhookSecret) {
     throw new Error("Render webhook uchun RENDER_EXTERNAL_URL va WEBHOOK_SECRET talab qilinadi");
   }
+  const webhookSecret = createHash("sha256").update(configuredWebhookSecret).digest("hex");
+
+  await bot.init();
 
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/health") {
