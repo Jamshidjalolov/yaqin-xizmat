@@ -97,7 +97,10 @@ async def check_user(data: schemas.UserCheckInput, db: AsyncSession = Depends(da
 async def telegram_login(data: schemas.TelegramAuthInput, db: AsyncSession = Depends(database.get_db)):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
-        raise HTTPException(status_code=503, detail="Telegram orqali kirish sozlanmagan")
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram orqali kirish serverda sozlanmagan. Render'dagi yaqin-xizmat-api servisiga TELEGRAM_BOT_TOKEN qo'shing.",
+        )
 
     telegram_id, full_name, photo_url = _validate_telegram_init_data(data.init_data, bot_token)
     user_key = hmac.new(

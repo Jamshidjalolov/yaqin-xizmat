@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RoleSelectionScreen } from './components/RoleSelectionScreen';
 import { AuthMethodScreen } from './components/AuthMethodScreen';
@@ -19,6 +20,7 @@ import { PageLoader } from './components/PageLoader';
 import {
   Service,
   fetchServices,
+  fetchServiceById,
   completeProfileApi,
   loginUser,
   loginWithTelegram,
@@ -73,6 +75,11 @@ export const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [linkedServiceId, setLinkedServiceId] = useState<number | null>(() => {
+    const value = new URLSearchParams(window.location.search).get('service_id');
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
@@ -110,13 +117,47 @@ export const App: React.FC = () => {
         if (!active) return;
         console.error('Telegram Web App login failed:', err);
         setCurrentScreen('main');
-        window.setTimeout(() => toast.error('Telegram orqali kirib bo\'lmadi. Keyinroq qayta urinib ko\'ring.'), 0);
+        const detail = axios.isAxiosError<{ detail?: string }>(err)
+          ? err.response?.data?.detail
+          : undefined;
+        window.setTimeout(() => toast.error(detail || 'Telegram orqali kirib bo\'lmadi. Keyinroq qayta urinib ko\'ring.'), 0);
       });
 
     return () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (currentScreen !== 'main' || linkedServiceId === null) return;
+
+    let active = true;
+    fetchServiceById(linkedServiceId)
+      .then((service) => {
+        if (!active) return;
+        if (!service || service.status !== 'approved') {
+          toast.error("Ushbu xizmat hozir ilovada mavjud emas.");
+          setLinkedServiceId(null);
+          return;
+        }
+
+        setSelectedCategory('Barchasi');
+        setSearchQuery('');
+        setViewMode('grid');
+        setSelectedService(service);
+        setLinkedServiceId(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        console.error('Linked Telegram service could not be opened:', error);
+        toast.error("Xizmatni ilovada ochib bo'lmadi. Qayta urinib ko'ring.");
+        setLinkedServiceId(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentScreen, linkedServiceId]);
 
   // Load ALL services for customer view
   const loadServices = async () => {
