@@ -141,15 +141,31 @@ async function apiRequest(path, options = {}) {
   return response.json();
 }
 
-function appKeyboard() {
-  return miniAppEnabled ? new InlineKeyboard().webApp("📱 Ilovada ochish", webAppUrl) : undefined;
+function buildAppUrl(params = {}) {
+  const url = new URL(webAppUrl);
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined && val !== null && String(val).trim() !== "") {
+      url.searchParams.set(key, String(val).trim());
+    }
+  }
+  return url.toString();
 }
 
-function serviceAppUrl(serviceId) {
-  if (!miniAppEnabled) return webAppUrl;
-  const url = new URL(webAppUrl);
-  url.searchParams.set("service_id", String(serviceId));
-  return url.toString();
+function serviceAppUrl(serviceId, view = "") {
+  return buildAppUrl({ service_id: serviceId, ...(view ? { view } : {}) });
+}
+
+function serviceMapUrl(service) {
+  const lat = Number.parseFloat(service.lat);
+  const lng = Number.parseFloat(service.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+  }
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(service.location || "Buxoro")}`;
+}
+
+function appKeyboard(url = webAppUrl) {
+  return miniAppEnabled ? new InlineKeyboard().webApp("📱 Ilovada ochish", url) : undefined;
 }
 
 function mainKeyboard() {
@@ -158,11 +174,11 @@ function mainKeyboard() {
     .text("📂 Kategoriyalar", "categories:0")
     .row()
     .text("🔎 Qidirish", "search");
-  if (miniAppEnabled) keyboard.row().webApp("📱 Ilovada ochish", webAppUrl);
+  if (miniAppEnabled) keyboard.row().webApp("📱 Ilovada ochish", buildAppUrl());
   return keyboard;
 }
 
-function pageKeyboard(items, page, itemCallback, pageCallback, labelForItem, valueForItem, totalCount = items.length) {
+function pageKeyboard(items, page, itemCallback, pageCallback, labelForItem, valueForItem, totalCount = items.length, appUrl = webAppUrl) {
   const keyboard = new InlineKeyboard();
   for (const [index, item] of items.entries()) {
     keyboard.text(labelForItem(item), `${itemCallback}:${valueForItem(item, page * pageSize + index)}`).row();
@@ -171,7 +187,7 @@ function pageKeyboard(items, page, itemCallback, pageCallback, labelForItem, val
   if (page > 0) keyboard.text("⬅️ Oldingi", pageData(page - 1));
   if ((page + 1) * pageSize < totalCount) keyboard.text("Keyingi ➡️", pageData(page + 1));
   keyboard.row().text("🏠 Bosh menyu", "menu");
-  if (miniAppEnabled) keyboard.webApp("📱 Ilovada ochish", webAppUrl);
+  if (miniAppEnabled) keyboard.webApp("📱 Ilovada ochish", appUrl);
   return keyboard;
 }
 
@@ -213,11 +229,12 @@ async function showServices(ctx, page = 0, category = "") {
     valueForItem = (_service, index) => `${categories.indexOf(category)}:${index}`;
   }
 
+  const appUrl = category ? buildAppUrl({ category }) : buildAppUrl();
   const keyboard = pageKeyboard(items, page, itemCallback, pageCallback, (service) => {
     const title = service.title || "Xizmat";
     const label = `${categoryIcon(service.category)} ${title}`;
     return label.length > 48 ? `${label.slice(0, 45)}...` : label;
-  }, valueForItem, services.length);
+  }, valueForItem, services.length, appUrl);
   await replyOrEdit(ctx, `${heading}\nKerakli xizmatni tanlang (${services.length} ta):`, keyboard);
 }
 
@@ -239,6 +256,7 @@ async function showCategories(ctx, page = 0) {
     (name) => `${categoryIcon(name)} ${name}`,
     (_name, index) => index,
     categories.length,
+    buildAppUrl({ tab: "categories" }),
   );
   await replyOrEdit(ctx, "📂 <b>XIZMAT TURINI TANLANG</b>\n\nSizga kerakli yo'nalishni tanlang 👇", keyboard);
 }
@@ -271,6 +289,8 @@ async function showService(ctx, id) {
     .text("📞 Bog'lanish", `call:${service.id}`)
     .text("📍 Xaritada ko'rish", `map:${service.id}`)
     .row()
+    .url("🌐 Saytdan ko'rish", serviceAppUrl(service.id))
+    .row()
     .text("⬅️ Xizmatlar", "services:0")
     .text("🏠 Bosh menyu", "menu")
     .row();
@@ -294,6 +314,7 @@ async function showSearchResults(ctx, search, page = 0) {
     (service) => `${categoryIcon(service.category)} ${service.title || "Xizmat"}`,
     (service) => service.id,
     services.length,
+    buildAppUrl({ search }),
   );
   await replyOrEdit(
     ctx,
@@ -346,6 +367,37 @@ bot.use(async (ctx, next) => {
 });
 
 bot.command("start", async (ctx) => {
+  const payload = ctx.match?.trim();
+  if (payload) {
+    if (payload.startsWith("service_") || payload.startsWith("s_")) {
+      const id = Number(payload.replace(/^(service_|s_)/, ""));
+      if (Number.isSafeInteger(id) && id > 0) {
+        return showService(ctx, id);
+      }
+    }
+    if (payload.startsWith("map_")) {
+      const id = Number(payload.replace(/^map_/, ""));
+      if (Number.isSafeInteger(id) && id > 0) {
+        const service = await apiRequest(`/services/${id}`);
+        if (service && service.status === "approved") {
+          const startMapKeyboard = new InlineKeyboard()
+            .url("🗺 Xaritada ochish", serviceMapUrl(service))
+            .row()
+            .url("🌐 Saytdan ko'rish", serviceAppUrl(service.id));
+          if (miniAppEnabled) startMapKeyboard.row().webApp("📱 Ilovada ochish", serviceAppUrl(service.id, "map"));
+          return ctx.reply(
+            `🗺 <b>${escapeHtml(service.title)}</b>\n\n📍 ${escapeHtml(service.location)}\n\nXaritada ochish 👇`,
+            { parse_mode: "HTML", reply_markup: startMapKeyboard },
+          );
+        }
+      }
+    }
+    if (payload.startsWith("cat_") || payload.startsWith("c_")) {
+      const cat = decodeURIComponent(payload.replace(/^(cat_|c_)/, ""));
+      return showServices(ctx, 0, cat);
+    }
+  }
+
   const name = escapeHtml(ctx.from?.first_name || "do'st");
   await ctx.replyWithPhoto(
     welcomePhoto,
@@ -451,11 +503,11 @@ bot.callbackQuery(/^call:(\d+)$/, async (ctx) => {
     return;
   }
   await apiRequest(`/services/${service.id}/call`, { method: "POST" });
+  const callKeyboard = new InlineKeyboard().url("🌐 Saytdan ko'rish", serviceAppUrl(service.id));
+  if (miniAppEnabled) callKeyboard.row().webApp("📱 Ilovada ochish", serviceAppUrl(service.id));
   await ctx.reply(
     `✅ <b>${escapeHtml(service.provider_name)}</b>\n\n📞 Telefon raqami:\n<code>${escapeHtml(service.phone)}</code>\n\n🤝 Qo'ng'iroq qilib, xizmat tafsilotlarini kelishib oling.`,
-    { parse_mode: "HTML", reply_markup: miniAppEnabled
-      ? new InlineKeyboard().webApp("📱 Ilovada ochish", serviceAppUrl(service.id))
-      : undefined },
+    { parse_mode: "HTML", reply_markup: callKeyboard },
   );
 });
 
@@ -466,15 +518,14 @@ bot.callbackQuery(/^map:(\d+)$/, async (ctx) => {
     return;
   }
   await apiRequest(`/services/${service.id}/direction`, { method: "POST" });
-  const coordinates = `${encodeURIComponent(service.lat || "")},${encodeURIComponent(service.lng || "")}`;
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${coordinates}`;
+  const mapKeyboard = new InlineKeyboard()
+    .url("🗺 Xaritada ochish", serviceMapUrl(service))
+    .row()
+    .url("🌐 Saytdan ko'rish", serviceAppUrl(service.id));
+  if (miniAppEnabled) mapKeyboard.row().webApp("📱 Ilovada ochish", serviceAppUrl(service.id, "map"));
   await ctx.reply(
     `🗺 <b>Manzil</b>\n\n📍 ${escapeHtml(service.location)}\n\nXaritada yo'lni oching 👇`,
-    {
-      reply_markup: miniAppEnabled
-        ? new InlineKeyboard().url("🗺 Xaritada ochish", mapUrl).row().webApp("📱 Ilovada ochish", serviceAppUrl(service.id))
-        : new InlineKeyboard().url("🗺 Xaritada ochish", mapUrl),
-    },
+    { reply_markup: mapKeyboard },
   );
 });
 
@@ -482,7 +533,9 @@ bot.callbackQuery("search", async (ctx) => {
   searchChats.add(ctx.chat.id);
   await ctx.reply("🔎 <b>Qanday xizmat kerak?</b>\n\nMasalan: santexnik, elektrik yoki dorixona. Nomini yozib yuboring 👇", {
     parse_mode: "HTML",
-    reply_markup: appKeyboard(),
+    reply_markup: miniAppEnabled
+      ? new InlineKeyboard().webApp("📱 Ilovada qidirish", buildAppUrl({ tab: "search" }))
+      : undefined,
   });
 });
 

@@ -26,19 +26,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
     try {
       if (isLogin) {
-        await loginUser(email, password);
-        onSuccess(email);
+        await loginUser(email.trim(), password);
+        onSuccess(email.trim());
         onClose();
       } else {
-        await registerUser(email, password, fullName, phone);
-        // After register, attempt automatic login
-        await loginUser(email, password);
-        onSuccess(email);
+        if (!fullName.trim()) {
+          setError("Iltimos, ismingizni kiriting.");
+          setLoading(false);
+          return;
+        }
+        await registerUser(email.trim(), password, fullName.trim(), phone.trim() || undefined);
+        await loginUser(email.trim(), password);
+        onSuccess(email.trim());
         onClose();
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || "Xatolik yuz berdi. Parol yoki emailni tekshiring.");
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (Array.isArray(detail) && detail[0]?.msg ? detail[0].msg : (err.message || "Xatolik yuz berdi. Parol yoki emailni tekshiring."));
+      setError(msg);
     } finally {
       setLoading(false);
     }

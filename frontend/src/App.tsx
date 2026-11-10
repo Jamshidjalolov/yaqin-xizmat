@@ -31,15 +31,34 @@ import {
 } from './api';
 import { Language } from './i18n';
 import { LatLng, distanceMeters, BUKHARA_CENTER } from './utils/geo';
+import { parseDeepLink } from './utils/deepLink';
 import RouteModal from './components/RouteModal';
 import { RefreshCw, SearchX, AlertCircle, Map as MapIcon, LayoutGrid, Crosshair } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 export const App: React.FC = () => {
+  const initialDeepLink = useMemo(() => parseDeepLink(), []);
+  const hasDeepLink = useMemo(() => (
+    initialDeepLink.serviceId !== null ||
+    Boolean(initialDeepLink.category) ||
+    Boolean(initialDeepLink.search) ||
+    initialDeepLink.tab !== null
+  ), [initialDeepLink]);
+
   const [currentScreen, setCurrentScreen] = useState<
     'welcome' | 'role_select' | 'auth_method' | 'register_form' | 'success_complete' | 'admin_login' | 'main'
   >(() => {
+    const isTelegram = Boolean(window.Telegram?.WebApp?.initData);
+    if (
+      isTelegram ||
+      initialDeepLink.serviceId !== null ||
+      Boolean(initialDeepLink.category) ||
+      Boolean(initialDeepLink.search) ||
+      initialDeepLink.tab !== null
+    ) {
+      return 'main';
+    }
     if (!localStorage.getItem('user_email')) return 'welcome';
     if (localStorage.getItem('user_role') === 'admin' && isSessionStale('admin')) return 'admin_login';
     return 'main';
@@ -71,18 +90,22 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('Barchasi');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    return initialDeepLink.category || 'Barchasi';
+  });
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    return initialDeepLink.search || '';
+  });
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [linkedServiceId, setLinkedServiceId] = useState<number | null>(() => {
-    const value = new URLSearchParams(window.location.search).get('service_id');
-    const id = Number(value);
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
+    return initialDeepLink.serviceId;
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
-  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'map'>(() => {
+    return initialDeepLink.view === 'map' ? 'map' : 'grid';
+  });
   const [userPos, setUserPos] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [routeTarget, setRouteTarget] = useState<{ dest: LatLng; name: string } | null>(null);
@@ -105,11 +128,12 @@ export const App: React.FC = () => {
         if (!active) return;
         const email = user.email as string;
         const name = (user.full_name as string | undefined) || email.split('@')[0];
+        const role = (user.role as 'customer' | 'provider' | 'admin') || 'customer';
         localStorage.setItem('user_email', email);
-        localStorage.setItem('user_role', 'customer');
+        localStorage.setItem('user_role', role);
         localStorage.setItem('user_display_name', name);
         setUserEmail(email);
-        setSelectedRole('customer');
+        setSelectedRole(role);
         setAuthUserData({ email, displayName: name, photoURL: user.avatar_url || '' });
         setCurrentScreen('main');
       })
@@ -117,9 +141,19 @@ export const App: React.FC = () => {
         if (!active) return;
         console.error('Telegram Web App login failed:', err);
         setCurrentScreen('main');
-        const detail = axios.isAxiosError<{ detail?: string }>(err)
-          ? err.response?.data?.detail
-          : undefined;
+        let detail: string | undefined;
+        if (axios.isAxiosError(err)) {
+          const respDetail = err.response?.data?.detail;
+          if (typeof respDetail === 'string') {
+            detail = respDetail;
+          } else if (Array.isArray(respDetail) && respDetail.length > 0 && typeof respDetail[0]?.msg === 'string') {
+            detail = respDetail[0].msg;
+          } else if (err.code === 'ERR_NETWORK' || !err.response) {
+            detail = "Serverga ulanib bo'lmadi. Internet yoki backend server holatini tekshiring.";
+          }
+        } else if (err instanceof Error) {
+          detail = err.message;
+        }
         window.setTimeout(() => toast.error(detail || 'Telegram orqali kirib bo\'lmadi. Keyinroq qayta urinib ko\'ring.'), 0);
       });
 
@@ -141,9 +175,11 @@ export const App: React.FC = () => {
           return;
         }
 
-        setSelectedCategory('Barchasi');
-        setSearchQuery('');
-        setViewMode('grid');
+        if (initialDeepLink.view === 'map') {
+          setViewMode('map');
+        } else {
+          setViewMode('grid');
+        }
         setSelectedService(service);
         setLinkedServiceId(null);
       })
@@ -157,7 +193,7 @@ export const App: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [currentScreen, linkedServiceId]);
+  }, [currentScreen, linkedServiceId, initialDeepLink.view]);
 
   // Load ALL services for customer view
   const loadServices = async () => {
@@ -270,9 +306,9 @@ export const App: React.FC = () => {
     const activeRole = selectedRole;
 
     try {
-      await loginUser(userData.email, '');
       const check = await checkUserApi(userData.email);
       if (check.exists && check.user) {
+        await loginUser(userData.email, '');
         const dbRole: 'customer' | 'provider' = check.user.role === 'provider' ? 'provider' : 'customer';
         if (activeRole === 'provider' && dbRole === 'customer') {
           toast.info('Ustalik rolini sayt administratori faollashtiradi. Hozircha mijoz sifatida kirdingiz.');
@@ -289,12 +325,13 @@ export const App: React.FC = () => {
         setCurrentScreen('main');
         return;
       }
-    } catch (err) {
+      // Yangi foydalanuvchi -> profilni to'ldirish formasi
+      setCurrentScreen('register_form');
+    } catch (err: any) {
       console.warn('Auth check error:', err);
+      const detail = err?.response?.data?.detail;
+      toast.error(detail || "Server bilan bog'lanishda xatolik. Qayta urinib ko'ring.");
     }
-
-    // New user -> open registration form to complete profile
-    setCurrentScreen('register_form');
   };
 
   // ── 1. Welcome ──────────────────────────────────────────────────────────────
@@ -393,6 +430,13 @@ export const App: React.FC = () => {
               role: 'customer'
             });
             handleAuthSuccess(emailToSave, 'customer');
+            setAuthUserData(prev => ({
+              ...prev,
+              displayName: profileData.fullName,
+              phone: profileData.phone,
+              photoURL: profileData.avatarUrl || prev.photoURL
+            }));
+            if (profileData.fullName) localStorage.setItem('user_display_name', profileData.fullName);
             if (selectedRole === 'provider') {
               toast.info('Ustalik rolini sayt administratori tasdiqlagandan so\'ng faollashtiriladi.');
             }
@@ -434,7 +478,7 @@ export const App: React.FC = () => {
   }
 
   // ── 6a. ADMIN DASHBOARD (Barcha ma'lumotlar va moderatsiya) ───────────────────
-  if (currentScreen === 'main' && selectedRole === 'admin') {
+  if (currentScreen === 'main' && selectedRole === 'admin' && !hasDeepLink) {
     return (
       <div className="page-transition">
         <AdminDashboard
@@ -450,7 +494,7 @@ export const App: React.FC = () => {
   }
 
   // ── 6b. PROVIDER DASHBOARD (Faqat Xizmat ko'rsatuvchi uchun) ─────────────────
-  if (currentScreen === 'main' && selectedRole === 'provider') {
+  if (currentScreen === 'main' && selectedRole === 'provider' && !hasDeepLink) {
     return (
       <div className="page-transition">
         <ProviderDashboard
@@ -472,7 +516,7 @@ export const App: React.FC = () => {
       <Navbar
         lang={lang}
         onLangChange={setLang}
-        onOpenAuthModal={() => setIsAuthModalOpen(false)}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
         userEmail={userEmail}
         selectedRole={selectedRole}
         onLogout={handleLogout}

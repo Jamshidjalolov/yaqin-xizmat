@@ -24,9 +24,19 @@ Botda `/start`, `/services`, `/categories`, `/search` buyruqlari, inline xizmat/
 
 Repo rootidagi `render.yaml` FastAPI va Telegram bot uchun ikkita bepul Render web service yaratadi. Bot production'da Telegram webhook rejimiga o'tadi; `WEBHOOK_SECRET` Render tomonidan yaratiladi. Blueprint'ni GitHub repo'ga ulanganda:
 
-- API service: mavjud Neon `DATABASE_URL`, backend `.env` dagi mavjud `SECRET_KEY`, va BotFather `TELEGRAM_BOT_TOKEN` qiymatlarini kiriting.
-- Bot service: backend service'ning `https://...onrender.com` manzilini `API_BASE_URL` sifatida, BotFather tokenini `BOT_TOKEN` sifatida kiriting.
+- API service (`yaqin-xizmat-api`): mavjud Neon `DATABASE_URL`, backend `.env` dagi mavjud `SECRET_KEY`, va BotFather tokenini `TELEGRAM_BOT_TOKEN` sifatida kiriting.
+- Bot service (`yaqin-xizmat-bot`): backend service'ning `https://...onrender.com` manzilini `API_BASE_URL` sifatida va xuddi shu BotFather tokenini `BOT_TOKEN` sifatida kiriting.
 - Frontend production URL'i `https://yaqin-xizmat.netlify.app` bo'lib, `WEB_APP_URL` oldindan sozlangan.
+
+### `BOT_TOKEN environment variable is missing` xatosi
+
+Bu xato bot servisida `BOT_TOKEN` sozlanmaganini bildiradi. Render Dashboard'da `yaqin-xizmat-bot` servisining **Environment** bo'limiga o'ting va `BOT_TOKEN` nomli environment variable qo'shing. Qiymati API servisidagi `TELEGRAM_BOT_TOKEN` bilan aynan bir xil BotFather tokeni bo'lishi kerak. O'zgarishlarni saqlab, bot servisni qayta deploy qiling.
+
+Telegram Mini App orqali backend login ishlashi uchun `yaqin-xizmat-api` servisidagi **Environment** bo'limida ham `TELEGRAM_BOT_TOKEN` bo'lishi kerak. Maxfiy tokenni Git'ga yoki kodga yozmang.
+
+### `secret token contains illegal characters` xatosi
+
+Render yaratgan `WEBHOOK_SECRET` qiymatida Telegram webhook qabul qilmaydigan belgilar bo'lishi mumkin. Bot xom qiymatni SHA-256 orqali Telegram qabul qiladigan hex formatiga o'tkazib, webhook o'rnatish va kelgan so'rovlarni tekshirishda aynan shu qiymatdan foydalanadi. Logda eski secret ko'rinib qolgan bo'lsa, Render Dashboard'da `yaqin-xizmat-bot` servisining `WEBHOOK_SECRET` qiymatini yangilang va botni qayta deploy qiling.
 
 Render'ning bepul web service'lari uzoq vaqt so'rov bo'lmasa uxlab qolishi mumkin; bot yoki API birinchi so'rovda sovuq start bilan uyg'onadi. Ishlab chiqarishdagi doimiy ishlash uchun pulli doimiy servis kerak bo'lishi mumkin.
 

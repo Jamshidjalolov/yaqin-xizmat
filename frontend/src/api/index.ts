@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? 'http://localhost:8000' : 'https://yaqin-xizmat-api.onrender.com');
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -460,58 +462,48 @@ export const fetchAdminStatsApi = async (): Promise<AdminStats> => {
 };
 
 export const checkUserApi = async (email: string): Promise<{ exists: boolean; user?: UserData }> => {
-  try {
-    const response = await api.post('/auth/check', { email });
-    return response.data;
-  } catch (error) {
-    console.warn('Check user error:', error);
-    return { exists: false };
-  }
+  const response = await api.post('/auth/check', { email });
+  return response.data;
 };
 
-export const registerUser = async (email: string, password?: string, fullName?: string, phone?: string) => {
-  try {
-    const response = await api.post('/auth/register', {
-      email,
-      password,
-      full_name: fullName,
-      phone,
-      role: 'customer'
-    });
-    return response.data;
-  } catch (error) {
-    return { id: Date.now(), email, is_active: true, role: 'customer' };
-  }
+export const registerUser = async (
+  email: string,
+  password?: string,
+  fullName?: string,
+  phone?: string,
+  role: 'customer' | 'provider' = 'customer'
+) => {
+  const response = await api.post('/auth/register', {
+    email,
+    password,
+    full_name: fullName,
+    phone,
+    role
+  });
+  return response.data;
 };
 
 export const completeProfileApi = async (data: ProfileCompleteData): Promise<UserData> => {
+  const response = await api.post('/auth/complete-profile', {
+    email: data.email,
+    full_name: data.fullName,
+    phone: data.phone,
+    city: data.city,
+    business_name: data.businessName,
+    activity_type: data.activityType,
+    avatar_url: data.avatarUrl,
+    role: data.role
+  });
+  // Profil to'ldirilgach JWT token olish uchun avtomatik login
   try {
-    const response = await api.post('/auth/complete-profile', {
-      email: data.email,
-      full_name: data.fullName,
-      phone: data.phone,
-      city: data.city,
-      business_name: data.businessName,
-      activity_type: data.activityType,
-      avatar_url: data.avatarUrl,
-      role: data.role
-    });
-    return response.data;
-  } catch (error: any) {
-    console.warn("Backend complete-profile notice:", error?.message || error);
-    return {
-      id: Date.now(),
-      email: data.email,
-      full_name: data.fullName,
-      phone: data.phone,
-      city: data.city,
-      business_name: data.businessName,
-      activity_type: data.activityType,
-      avatar_url: data.avatarUrl,
-      role: data.role,
-      is_active: true
-    };
+    const loginRes = await api.post('/auth/login', { email: data.email, password: '' });
+    if (loginRes.data?.access_token) {
+      localStorage.setItem('access_token', loginRes.data.access_token);
+    }
+  } catch (err) {
+    console.warn('Auto-login after profile completion warning:', err);
   }
+  return response.data;
 };
 
 export const loginUser = async (email: string, password?: string) => {

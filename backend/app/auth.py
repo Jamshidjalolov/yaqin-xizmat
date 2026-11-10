@@ -37,9 +37,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 def _validate_telegram_init_data(init_data: str, bot_token: str):
     try:
-        pairs = parse_qsl(init_data, strict_parsing=True)
+        pairs = parse_qsl(init_data, keep_blank_values=True)
         data = dict(pairs)
-        supplied_hash = data.pop("hash")
+        supplied_hash = data.pop("hash", None)
+        if not supplied_hash:
+            raise HTTPException(status_code=401, detail="Telegram ma'lumotlari yaroqsiz")
+        # 'signature' (Bot API 8.0+) xesh hisobiga kiradi — faqat 'hash' chiqariladi.
         auth_date = int(data["auth_date"])
         telegram_user = json.loads(data["user"])
         telegram_id = int(telegram_user["id"])
@@ -48,11 +51,8 @@ def _validate_telegram_init_data(init_data: str, bot_token: str):
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(status_code=401, detail="Telegram ma'lumotlari yaroqsiz")
 
-    if len(pairs) != len(data) + 1:
-        raise HTTPException(status_code=401, detail="Telegram ma'lumotlari yaroqsiz")
-
     now = int(time.time())
-    if auth_date > now + 60 or now - auth_date > 86400:
+    if auth_date > now + 300 or now - auth_date > 86400:
         raise HTTPException(status_code=401, detail="Telegram sessiyasi eskirgan")
 
     data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(data.items()))
@@ -125,6 +125,17 @@ async def telegram_login(data: schemas.TelegramAuthInput, db: AsyncSession = Dep
         db.add(user)
         await db.commit()
         await db.refresh(user)
+    else:
+        updated = False
+        if not user.full_name and full_name:
+            user.full_name = full_name
+            updated = True
+        if not user.avatar_url and photo_url:
+            user.avatar_url = photo_url
+            updated = True
+        if updated:
+            await db.commit()
+            await db.refresh(user)
 
     expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = jwt.encode(
@@ -143,14 +154,14 @@ async def telegram_login(data: schemas.TelegramAuthInput, db: AsyncSession = Dep
 async def register(user: schemas.UserCreate, db: AsyncSession = Depends(database.get_db)):
     existing = await get_user_by_email(db, user.email)
     if existing:
-        return existing
+        raise HTTPException(status_code=400, detail="Bu email allaqachon ro'yxatdan o'tgan. Tizimga kiring.")
     hashed = pwd_context.hash(user.password) if user.password else "social_auth_user"
     new_user = models.User(
         email=user.email,
         full_name=user.full_name,
         phone=user.phone,
         hashed_password=hashed,
-        role='customer'
+        role=user.role if user.role in ('customer', 'provider') else 'customer'
     )
     db.add(new_user)
     await db.commit()
@@ -201,6 +212,7 @@ async def login(form_data: schemas.UserCreate, db: AsyncSession = Depends(databa
 @router.post('/complete-profile', response_model=schemas.UserOut)
 async def complete_profile(profile: schemas.ProfileCompleteInput, db: AsyncSession = Depends(database.get_db)):
     user = await get_user_by_email(db, profile.email)
+    assigned_role = profile.role if profile.role in ('customer', 'provider') else 'customer'
     if not user:
         user = models.User(
             email=profile.email,
@@ -211,7 +223,7 @@ async def complete_profile(profile: schemas.ProfileCompleteInput, db: AsyncSessi
             business_name=profile.business_name,
             activity_type=profile.activity_type,
             avatar_url=profile.avatar_url,
-            role='customer'
+            role=assigned_role
         )
         db.add(user)
     else:
@@ -221,6 +233,8 @@ async def complete_profile(profile: schemas.ProfileCompleteInput, db: AsyncSessi
         user.business_name = profile.business_name
         user.activity_type = profile.activity_type
         user.avatar_url = profile.avatar_url
+        if profile.role in ('customer', 'provider'):
+            user.role = profile.role
 
     await db.commit()
     await db.refresh(user)

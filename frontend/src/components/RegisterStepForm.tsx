@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Camera, User, Phone, MapPin, Briefcase, Building2, Store, ChevronRight, Check } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Language } from '../i18n';
 
 interface RegisterStepFormProps {
@@ -33,6 +34,10 @@ export const RegisterStepForm: React.FC<RegisterStepFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (role === 'customer' && !termsAgreed) {
+      toast.info('Davom etish uchun foydalanish shartlariga rozilik bering.');
+      return;
+    }
     setLoading(true);
     try {
       await onSubmitProfile({
@@ -43,8 +48,10 @@ export const RegisterStepForm: React.FC<RegisterStepFormProps> = ({
         businessName,
         avatarUrl: initialData?.photoURL || ''
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const detail = err?.response?.data?.detail;
+      toast.error(detail || "Profilni saqlashda xatolik. Qayta urinib ko'ring.");
     } finally {
       setLoading(false);
     }

@@ -41,17 +41,27 @@ export const signInWithGoogle = async (): Promise<GoogleUser> => {
     };
   } catch (error: any) {
     console.error("Firebase Auth xatosi:", error?.code, error?.message);
+    const code = error?.code || '';
 
-    if (error?.code === 'auth/popup-blocked') {
-      throw new Error("Popup bloklandi. Brauzeringizda popup'ga ruxsat bering.");
+    if (code === 'auth/popup-blocked') {
+      throw new Error("Popup bloklandi. Brauzeringizda popup'ga ruxsat bering yoki saytini oddiy brauzerda oching.");
     }
-    if (error?.code === 'auth/unauthorized-domain') {
-      throw new Error("Bu domen Firebase'da ro'yxatdan o'tmagan. Firebase Console > Authentication > Settings > Authorized domains ga 'localhost' qo'shing.");
-    }
-    if (error?.code === 'auth/cancelled-popup-request') {
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
       throw new Error("Google kirish oynasi yopildi. Qayta urinib ko'ring.");
     }
+    if (code === 'auth/unauthorized-domain') {
+      throw new Error(`Bu domen (${window.location.hostname}) Firebase'da ro'yxatdan o'tmagan. Firebase Console > Authentication > Settings > Authorized domains ro'yxatiga shu domenni qo'shing.`);
+    }
+    if (code === 'auth/network-request-failed') {
+      throw new Error("Internet aloqasi yo'q. Tarmoqni tekshirib, qayta urinib ko'ring.");
+    }
+    if (code === 'auth/operation-not-supported-in-this-environment') {
+      throw new Error("Bu muhitda Google oynasi ochilmaydi. Saytni oddiy brauzerda ochib ko'ring.");
+    }
+    if (code === 'auth/too-many-requests') {
+      throw new Error("Juda ko'p urinish bo'ldi. Birozdan so'ng qayta urinib ko'ring.");
+    }
 
-    throw error;
+    throw new Error("Google orqali kirishda xatolik yuz berdi. Qayta urinib ko'ring.");
   }
 };
